@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 Instance Auto Start and Stop
+
+Parameters:
+  TagKey:
+    Type: String
+    Default: AutoControl
+    Description: tag value for start and stop
+  CronPattern:
+    Type: String
+    Default: 00 09 * * ? *
+    Description: event run time
+  EventInitState:
+    Type: String
+    Default: DISABLED
+    Description: ssm automation initial status
+
+Resources:
+  # Execution Role 
+  AutomationAssumeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+          Principal:
+            Service: 
+              - ssm.amazonaws.com
+              - ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole
+      Policies:
+        - PolicyName: CmDwhTestSSMAtomationPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:DescribeInstanceStatus
+                Resource: 
+                - !Sub "arn:aws:ec2:*:${AWS::AccountId}:instance/*"
+              - Effect: Allow
+                Action:
+                - tag:GetResources 
+                Resource: 
+                - "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:role/SSMAtomationRole"
+                Condition:
+                  StringLikeIfExists:
+                    iam:PassedToService: ssm.amazonaws.com
+      Path: "/"
+      RoleName: SSMAtomationRole
+      Tags:
+        - Key: Name
+          Value: SSMAutomationRole
+
+# SSM Document
+  StopSSMDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      Name: Stop-EC2Instance
+      DocumentFormat: YAML
+      DocumentType: Automation
+      Content:
+        schemaVersion: "0.3"
+        description: Stop Target Tag EC2Instance
+        assumeRole: !GetAtt AutomationAssumeRole.Arn
+        parameters:
+          tagname:
+            type: String
+            default: !Ref TagKey   
+        mainSteps:
+          - name: StopEC2Instances
+            action: aws:executeAwsApi
+            inputs:
+              Service: ssm
+              Api: StartAutomationExecution
+              DocumentName: AWS-StopEC2Instance
+              TargetParameterName: InstanceId
+              Targets:
+                - Key: 'tag:{{ tagname }}'
+                  Values: 
+                    - 'true'
+      Tags:
+        - Key: Name
+          Value: "ssm-docs-ec2-stop"
+
+  StartSSMDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      Name: "Start-EC2Instance"
+      DocumentFormat: YAML
+      DocumentType: Automation
+      Content:
+        schemaVersion: "0.3"
+        description: Start Target Tag EC2Instance
+        assumeRole: !GetAtt AutomationAssumeRole.Arn
+        parameters:
+          tagname:
+            type: String
+            default: !Ref TagKey
+        mainSteps:
+          - name: StartEC2Instance
+            action: aws:executeAwsApi
+            inputs:
+              Service: ssm
+              Api: StartAutomationExecution
+              DocumentName: AWS-StartEC2Instance
+              TargetParameterName: InstanceId
+              Targets:
+                - Key: 'tag:{{ tagname }}'
+                  Values: 
+                    - 'true'
+      Tags:
+        - Key: Name
+          Value: "ssm-docs-ec2-start"
+
+  # Event
+  StopEC2AutomationEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: "StopEC2AutomationEvent"
+      ScheduleExpression: !Sub 'cron(${CronPattern})'
+      State: !Ref EventInitState
+      Targets:
+        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${StopSSMDocument}:$DEFAULT"
+          Id: TargetStopEC2Instance
+          RoleArn: !GetAtt AutomationAssumeRole.Arn
+  StartEC2AutomationEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: "StartEC2AutomationEvent"
+      ScheduleExpression: !Sub 'cron(${CronPattern})'
+      State: !Ref EventInitState
+      Targets:
+        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${StartSSMDocument}:$DEFAULT"
+          Id: TargetStartEC2Instance
+          RoleArn: !GetAtt AutomationAssumeRole.Arn
