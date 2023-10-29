@@ -28,6 +28,7 @@ Resources:
             Service: 
               - ssm.amazonaws.com
               - ec2.amazonaws.com
+              - events.amazonaws.com
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole
       Policies:
