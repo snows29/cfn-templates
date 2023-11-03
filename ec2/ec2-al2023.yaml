@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Web EC2 Instance for Tokyo Region
+
+Parameters:
+  Environment:
+    Type: String
+    Default: Dev
+    AllowedValues:
+      - Dev
+      - Stg
+      - Prd
+  AmiID:
+    Description: Input Ami ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  KeyPair:
+    Description: Input your KeyPair name
+    Type: String
+
+Mappings:
+  EnvironmentToParams:
+    Dev:
+      InstanceType: 't4g.micro'
+      Hostname: dev-web01
+    Stg:
+      InstanceType: 't4g.medium'
+      Hostname: stg-web01
+    Prd:
+      InstanceType: 't4g.large'
+      Hostname: prd-web01
+
+Resources:
+  WebInstace:
+    Type: AWS::EC2::Instance
+    Properties:
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 8
+            DeleteOnTermination: true
+            Encrypted: true
+      InstanceType: !FindInMap [EnvironmentToParams, !Ref Environment, InstanceType]
+      ImageId: !Ref AmiID
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - {'Fn::ImportValue': !Sub '${Environment}-WebServerSecurityGroupId'}
+      SubnetId: {'Fn::ImportValue': !Sub '${Environment}-PrivateSubnet01Id'}
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-EC2-web01
+        - Key: AutoControl
+          Value: true
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -xe
+
+            ## Package Update
+            dnf update -y
+
+            ## Hostname Setting
+            hostnamectl set-hostname ${ServerEnvironment}-web01
+
+            ## TimeZone Setting
+            sed -ie 's/ZONE=\"UTC\"/ZONE=\"Asia\/Tokyo\"/g' /etc/sysconfig/clock
+            sed -ie 's/UTC=true/UTC=false/g' /etc/sysconfig/clock
+            ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+          - {
+              ServerEnvironment: !FindInMap [EnvironmentToParams, !Ref Environment, Hostname]
+            }
