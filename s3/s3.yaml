@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Web EC2 Instance for Tokyo Region
+
+Parameters:
+  Environment:
+    Type: String
+    Default: Dev
+    AllowedValues:
+      - Dev
+      - Stg
+      - Prd
+
+Mappings:
+  EnvironmentToParams:
+    Dev:
+      BucketName: dev-bucket
+    Stg:
+      BucketName: stg-bucket
+    Prd:
+      BucketName: prd-bucket
+
+Resources:
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: 
+        Fn::Sub:
+          - '${Environment}-${AWS::AccountId}'
+          - Environment: !FindInMap [EnvironmentToParams, !Ref Environment, BucketName]
+Outputs:
+  S3BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref S3Bucket
