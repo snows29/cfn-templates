@@ -28,6 +28,22 @@ Resources:
         Fn::Sub:
           - '${Environment}-${AWS::AccountId}'
           - Environment: !FindInMap [EnvironmentToParams, !Ref Environment, BucketName]
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: NoncurrentVersionExpiration
+            NoncurrentVersionExpiration:
+              NewerNoncurrentVersions: 3
+              NoncurrentDays: 1
+            Status: Enabled
+          - Id: GlacierMigration
+            Prefix: archive
+            Status: Enabled
+            ExpirationInDays: 365
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: GLACIER
 Outputs:
   S3BucketName:
     Description: S3 Bucket Name
